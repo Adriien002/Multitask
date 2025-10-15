@@ -1,0 +1,111 @@
+/home/tibia/Projet_Hemorragie/hemorragie-env/lib/python3.12/site-packages/pytorch_lightning/callbacks/model_checkpoint.py:654: Checkpoint directory /store/home/tibia/Projet_Hemorragie/MBH_homeo_sousechantillonage exists and is not empty.
+LOCAL_RANK: 0 - CUDA_VISIBLE_DEVICES: [0,1]
+
+  | Name               | Type                | Params | Mode
+-------------------------------------------------------------------
+0 | encoder_seg        | BasicUNetEncoder    | 3.6 M  | train
+1 | encoder_cls        | BasicUNetEncoder    | 3.6 M  | train
+2 | seg_decoder        | SegDecoder          | 2.2 M  | train
+3 | cls_head           | ClsHead             | 8.5 M  | train
+4 | seg_loss_fn        | DiceCELoss          | 0      | train
+5 | cls_loss_fn        | BCEWithLogitsLoss   | 0      | train
+6 | cls_auc            | MultilabelAUROC     | 0      | train
+7 | cls_mean_auc       | MultilabelAUROC     | 0      | train
+8 | cls_mean_precision | MultilabelPrecision | 0      | train
+9 | cls_mean_recall    | MultilabelRecall    | 0      | train
+-------------------------------------------------------------------
+17.8 M    Trainable params
+0         Non-trainable params
+17.8 M    Total params
+71.374    Total estimated model params size (MB)
+236       Modules in train mode
+0         Modules in eval mode
+Epoch 0:   0%|                                                                                      | 0/263 [00:00<?, ?it/s]
+/home/tibia/Projet_Hemorragie/hemorragie-env/lib/python3.12/site-packages/pytorch_lightning/utilities/data.py:79: Trying to infer the `batch_size` from an ambiguous collection. The batch size we found is 1. To avoid any miscalculations, use `self.log(..., batch_size=batch_size)`.
+Traceback (most recent call last):
+  File "/home/tibia/Projet_Hemorragie/Seg_hemorragie/Multitask_model/train.py", line 134, in <module>
+    trainer.fit(model, train_loader, val_loader)
+  File "/home/tibia/Projet_Hemorragie/hemorragie-env/lib/python3.12/site-packages/pytorch_lightning/trainer/trainer.py", line 561, in fit
+    call._call_and_handle_interrupt(
+  File "/home/tibia/Projet_Hemorragie/hemorragie-env/lib/python3.12/site-packages/pytorch_lightning/trainer/call.py", line 48, in _call_and_handle_interrupt
+    return trainer_fn(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/tibia/Projet_Hemorragie/hemorragie-env/lib/python3.12/site-packages/pytorch_lightning/trainer/trainer.py", line 599, in _fit_impl
+    self._run(model, ckpt_path=ckpt_path)
+  File "/home/tibia/Projet_Hemorragie/hemorragie-env/lib/python3.12/site-packages/pytorch_lightning/trainer/trainer.py", line 1012, in _run
+    results = self._run_stage()
+              ^^^^^^^^^^^^^^^^^
+  File "/home/tibia/Projet_Hemorragie/hemorragie-env/lib/python3.12/site-packages/pytorch_lightning/trainer/trainer.py", line 1056, in _run_stage
+    self.fit_loop.run()
+  File "/home/tibia/Projet_Hemorragie/hemorragie-env/lib/python3.12/site-packages/pytorch_lightning/loops/fit_loop.py", line 216, in run
+    self.advance()
+  File "/home/tibia/Projet_Hemorragie/hemorragie-env/lib/python3.12/site-packages/pytorch_lightning/loops/fit_loop.py", line 455, in advance
+    self.epoch_loop.run(self._data_fetcher)
+  File "/home/tibia/Projet_Hemorragie/hemorragie-env/lib/python3.12/site-packages/pytorch_lightning/loops/training_epoch_loop.py", line 150, in run
+    self.advance(data_fetcher)
+  File "/home/tibia/Projet_Hemorragie/hemorragie-env/lib/python3.12/site-packages/pytorch_lightning/loops/training_epoch_loop.py", line 320, in advance
+    batch_output = self.automatic_optimization.run(trainer.optimizers[0], batch_idx, kwargs)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/tibia/Projet_Hemorragie/hemorragie-env/lib/python3.12/site-packages/pytorch_lightning/loops/optimization/automatic.py", line 192, in run
+    self._optimizer_step(batch_idx, closure)
+  File "/home/tibia/Projet_Hemorragie/hemorragie-env/lib/python3.12/site-packages/pytorch_lightning/loops/optimization/automatic.py", line 270, in _optimizer_step
+    call._call_lightning_module_hook(
+  File "/home/tibia/Projet_Hemorragie/hemorragie-env/lib/python3.12/site-packages/pytorch_lightning/trainer/call.py", line 176, in _call_lightning_module_hook
+    output = fn(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^
+  File "/home/tibia/Projet_Hemorragie/hemorragie-env/lib/python3.12/site-packages/pytorch_lightning/core/module.py", line 1302, in optimizer_step
+    optimizer.step(closure=optimizer_closure)
+  File "/home/tibia/Projet_Hemorragie/hemorragie-env/lib/python3.12/site-packages/pytorch_lightning/core/optimizer.py", line 154, in step
+    step_output = self._strategy.optimizer_step(self._optimizer, closure, **kwargs)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/tibia/Projet_Hemorragie/hemorragie-env/lib/python3.12/site-packages/pytorch_lightning/strategies/strategy.py", line 239, in optimizer_step
+    return self.precision_plugin.optimizer_step(optimizer, model=model, closure=closure, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/tibia/Projet_Hemorragie/hemorragie-env/lib/python3.12/site-packages/pytorch_lightning/plugins/precision/amp.py", line 79, in optimizer_step
+    closure_result = closure()
+                     ^^^^^^^^^
+  File "/home/tibia/Projet_Hemorragie/hemorragie-env/lib/python3.12/site-packages/pytorch_lightning/loops/optimization/automatic.py", line 146, in __call__
+    self._result = self.closure(*args, **kwargs)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/tibia/Projet_Hemorragie/hemorragie-env/lib/python3.12/site-packages/torch/utils/_contextlib.py", line 116, in decorate_context
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/tibia/Projet_Hemorragie/hemorragie-env/lib/python3.12/site-packages/pytorch_lightning/loops/optimization/automatic.py", line 131, in closure
+    step_output = self._step_fn()
+                  ^^^^^^^^^^^^^^^
+  File "/home/tibia/Projet_Hemorragie/hemorragie-env/lib/python3.12/site-packages/pytorch_lightning/loops/optimization/automatic.py", line 319, in _training_step
+    training_step_output = call._call_strategy_hook(trainer, "training_step", *kwargs.values())
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/tibia/Projet_Hemorragie/hemorragie-env/lib/python3.12/site-packages/pytorch_lightning/trainer/call.py", line 328, in _call_strategy_hook
+    output = fn(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^
+  File "/home/tibia/Projet_Hemorragie/hemorragie-env/lib/python3.12/site-packages/pytorch_lightning/strategies/strategy.py", line 391, in training_step
+    return self.lightning_module.training_step(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/store/home/tibia/Projet_Hemorragie/Seg_hemorragie/Multitask_model/models/lightning_module.py", line 884, in training_step
+    loss_cls = self.cls_loss_fn(cls_logits, y_cls)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/tibia/Projet_Hemorragie/hemorragie-env/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1736, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/tibia/Projet_Hemorragie/hemorragie-env/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1747, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/tibia/Projet_Hemorragie/hemorragie-env/lib/python3.12/site-packages/torch/nn/modules/loss.py", line 819, in forward
+    return F.binary_cross_entropy_with_logits(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/tibia/Projet_Hemorragie/hemorragie-env/lib/python3.12/site-packages/torch/nn/functional.py", line 3607, in binary_cross_entropy_with_logits
+    return handle_torch_function(
+           ^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/tibia/Projet_Hemorragie/hemorragie-env/lib/python3.12/site-packages/torch/overrides.py", line 1739, in handle_torch_function
+    result = torch_func_method(public_api, types, args, kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/tibia/Projet_Hemorragie/hemorragie-env/lib/python3.12/site-packages/monai/data/meta_tensor.py", line 282, in __torch_function__
+    ret = super().__torch_function__(func, types, args, kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/tibia/Projet_Hemorragie/hemorragie-env/lib/python3.12/site-packages/torch/_tensor.py", line 1512, in __torch_function__
+    ret = func(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/tibia/Projet_Hemorragie/hemorragie-env/lib/python3.12/site-packages/torch/nn/functional.py", line 3624, in binary_cross_entropy_with_logits
+    raise ValueError(
+ValueError: Target size (torch.Size([6])) must be the same as input size (torch.Size([1, 6]))

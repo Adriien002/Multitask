@@ -1,0 +1,107 @@
+_wandb:
+    value:
+        cli_version: 0.21.1
+        e:
+            uny56kbaati3ked9dkoj7qj98sex53ln:
+                cpu_count: 24
+                cpu_count_logical: 48
+                cudaVersion: "12.8"
+                disk:
+                    /:
+                        total: "75094818816"
+                        used: "73119973376"
+                email: adrien.tibi92@gmail.com
+                executable: /home/tibia/Projet_Hemorragie/hemorragie-env/bin/python
+                git:
+                    commit: 52a42019c0f967f96ba51373c2f82ffb877c59df
+                    remote: https://github.com/Adriien002/Seg_hemorragie.git
+                gpu: NVIDIA RTX 6000 Ada Generation
+                gpu_count: 2
+                gpu_nvidia:
+                    - architecture: Ada
+                      cudaCores: 18176
+                      memoryTotal: "51527024640"
+                      name: NVIDIA RTX 6000 Ada Generation
+                      uuid: GPU-5066cb9e-0d54-48c3-89b2-a919ab35911e
+                    - architecture: Ada
+                      cudaCores: 18176
+                      memoryTotal: "51527024640"
+                      name: NVIDIA RTX 6000 Ada Generation
+                      uuid: GPU-edace5fd-b7de-4888-68bd-9cbf9733ff99
+                host: skmedic3.demdgi.polymtl.ca
+                memory:
+                    total: "269422395392"
+                os: Linux-5.14.0-601.el9.x86_64-x86_64-with-glibc2.34
+                program: /home/tibia/Projet_Hemorragie/Seg_hemorragie/Multitask_model/train.py
+                python: CPython 3.12.9
+                root: .
+                startedAt: "2025-09-04T17:07:36.472162Z"
+                writerId: uny56kbaati3ked9dkoj7qj98sex53ln
+        m:
+            - "1": trainer/global_step
+              "6":
+                - 3
+              "7": []
+            - "2": '*'
+              "5": 1
+              "6":
+                - 1
+              "7": []
+        python_version: 3.12.9
+        t:
+            "1":
+                - 1
+                - 5
+                - 9
+                - 11
+                - 41
+                - 48
+                - 49
+                - 53
+                - 103
+            "2":
+                - 1
+                - 5
+                - 9
+                - 11
+                - 41
+                - 48
+                - 49
+                - 53
+                - 103
+            "3":
+                - 7
+                - 15
+                - 16
+                - 66
+            "4": 3.12.9
+            "5": 0.21.1
+            "6": 4.51.3
+            "12": 0.21.1
+            "13": linux-x86_64
+batch_size:
+    value: 2
+cls_weight:
+    value: 0.5
+dataset_size:
+    value: 'small : positifs cases'
+learning_rate:
+    value: 0.001
+loss_weighting:
+    value: none
+model:
+    value: BasicUNetWithClassification
+num_classes:
+    value: 6
+num_steps:
+    value: 131500
+optimizer:
+    value: sgd
+reg_lambda:
+    value: 0.01
+seed:
+    value: 42
+seg_weight:
+    value: 1
+sharing_type:
+    value: soft

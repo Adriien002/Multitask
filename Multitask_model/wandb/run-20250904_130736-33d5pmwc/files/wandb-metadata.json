@@ -1,0 +1,45 @@
+{
+  "os": "Linux-5.14.0-601.el9.x86_64-x86_64-with-glibc2.34",
+  "python": "CPython 3.12.9",
+  "startedAt": "2025-09-04T17:07:36.472162Z",
+  "program": "/home/tibia/Projet_Hemorragie/Seg_hemorragie/Multitask_model/train.py",
+  "git": {
+    "remote": "https://github.com/Adriien002/Seg_hemorragie.git",
+    "commit": "52a42019c0f967f96ba51373c2f82ffb877c59df"
+  },
+  "email": "adrien.tibi92@gmail.com",
+  "root": ".",
+  "host": "skmedic3.demdgi.polymtl.ca",
+  "executable": "/home/tibia/Projet_Hemorragie/hemorragie-env/bin/python",
+  "cpu_count": 24,
+  "cpu_count_logical": 48,
+  "gpu": "NVIDIA RTX 6000 Ada Generation",
+  "gpu_count": 2,
+  "disk": {
+    "/": {
+      "total": "75094818816",
+      "used": "73119973376"
+    }
+  },
+  "memory": {
+    "total": "269422395392"
+  },
+  "gpu_nvidia": [
+    {
+      "name": "NVIDIA RTX 6000 Ada Generation",
+      "memoryTotal": "51527024640",
+      "cudaCores": 18176,
+      "architecture": "Ada",
+      "uuid": "GPU-5066cb9e-0d54-48c3-89b2-a919ab35911e"
+    },
+    {
+      "name": "NVIDIA RTX 6000 Ada Generation",
+      "memoryTotal": "51527024640",
+      "cudaCores": 18176,
+      "architecture": "Ada",
+      "uuid": "GPU-edace5fd-b7de-4888-68bd-9cbf9733ff99"
+    }
+  ],
+  "cudaVersion": "12.8",
+  "writerId": "uny56kbaati3ked9dkoj7qj98sex53ln"
+}
