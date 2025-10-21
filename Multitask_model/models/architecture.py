@@ -3,13 +3,95 @@ from typing import Optional
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 from monai.networks.blocks import Convolution, UpSample
 from monai.networks.layers.factories import Conv, Pool
 from monai.networks.nets.basic_unet import TwoConv, Down, UpCat
 from monai.utils import ensure_tuple_rep
 
+class MS_CAM_3D(nn.Module):
+    # Adapté pour 3D et Batch Size = 1 (remplacement BN par GroupNorm ici )
+    def __init__(self, channels=64, r=4, spatial_dims=3):
+        super(MS_CAM_3D, self).__init__()
+        inter_channels = int(channels // r)
+        Conv = nn.Conv3d if spatial_dims == 3 else nn.Conv2d
+        
+        # Helper for Group Norm (equivalent to LayerNorm on C, H, W, D when num_groups=channels)
+        Norm = lambda num_features: nn.GroupNorm(num_features=num_features, num_groups=1)
+        
+        # Local Attention (Local context)
+        self.local_att = nn.Sequential(
+            Conv(channels, inter_channels, kernel_size=1, stride=1, padding=0),
+            Norm(inter_channels),
+            nn.ReLU(inplace=True),
+            Conv(inter_channels, channels, kernel_size=1, stride=1, padding=0),
+            Norm(channels),
+        )
 
+        # Global Attention (Global context)
+        self.global_att = nn.Sequential(
+            nn.AdaptiveAvgPool3d(1) if spatial_dims == 3 else nn.AdaptiveAvgPool2d(1),
+            Conv(channels, inter_channels, kernel_size=1, stride=1, padding=0),
+            Norm(inter_channels),
+            nn.ReLU(inplace=True),
+            Conv(inter_channels, channels, kernel_size=1, stride=1, padding=0),
+            Norm(channels),
+        )
+
+        self.sigmoid = nn.Sigmoid()
+
+    def forward(self, x):
+        xl = self.local_att(x)
+        xg = self.global_att(x)
+        xlg = xl + xg
+        # L'AFF utilise cette sortie avant la Sigmoid pour le calcul de poids binaire
+        return xlg # On retourne les logits pour l'agrégation N-aire, on va utiliser Softmax
+        
+class PatchFusionAttention_MSCAM(nn.Module):
+    """
+    Adapte la logique de l'AFF/MS-CAM pour la fusion N-aire de patches 3D.
+    Utilise le MS-CAM pour calculer des poids d'attention multi-échelle (local + global)
+    pour chaque voxel, puis une Softmax sur la dimension des patches (N).
+    """
+    def __init__(self, in_channels, r=4):
+        super().__init__()
+        # Le module MS-CAM (sans la Sigmoid) pour générer les logits de poids
+        self.ms_cam_logits = MS_CAM_3D(channels=in_channels, r=r, spatial_dims=3)
+        # La Sigmoid n'est pas utilisée ici; on utilisera une Softmax sur la dimension N.
+        
+    def forward(self, x4):
+        """
+        x4: [B, N, C, H', W', D'] - Tenseur des caractéristiques de patches
+        """
+        B, N, C, H, W, D = x4.shape
+        
+        # 1. Reshape et Calcul des Logits MS-CAM par Patch
+        # x_flat: [B*N, C, H', W', D']
+        x_flat = x4.view(B * N, C, H, W, D) 
+        
+        # logits_flat: [B*N, C, H', W', D'] (Scores d'attention non normalisés)
+        # Ces logits intègrent le contexte local (point-wise conv) et global (avg pool) de chaque patch.
+        logits_flat = self.ms_cam_logits(x_flat) 
+        
+        # 2. Reshape pour Softmax
+        # logits: [B, N, C, H', W', D']
+        logits = logits_flat.view(B, N, C, H, W, D)
+        
+        # 3. Normalisation Softmax sur la dimension des patches (dim=1)
+        # Softmax appliquée élément-par-élément. Pour chaque voxel (c, h, w, d), 
+        # la somme des N poids (sur les N patches) est égale à 1.
+        # attn: [B, N, C, H', W', D'] (Les poids M_i)
+        attn_weights = F.softmax(logits, dim=1)
+        
+        # 4. Pondération et Agrégation Finale
+        # weighted: [B, N, C, H', W', D']
+        weighted = x4 * attn_weights
+        
+        # aggregated: [B, C, H', W', D']
+        aggregated = weighted.sum(dim=1) 
+
+        return aggregated, attn_weights        
 
 class BasicUNetWithClassification(nn.Module):
     def __init__(
@@ -26,6 +108,7 @@ class BasicUNetWithClassification(nn.Module):
         upsample: str = "deconv",
     ):
         super().__init__()
+        
         fea = ensure_tuple_rep(features, 6)
         print(f"BasicUNet features: {fea}.")
 
@@ -43,7 +126,8 @@ class BasicUNetWithClassification(nn.Module):
         self.upcat_1 = UpCat(spatial_dims, fea[1], fea[0], fea[5], act, norm, bias, dropout, upsample, halves=False)
 
         self.final_conv = Conv["conv", spatial_dims](fea[5], out_channels, kernel_size=1)
-
+        bottleneck_channels = fea[4] 
+        self.patch_fusion = PatchFusionAttention_MSCAM(in_channels=bottleneck_channels, r=4)
         # Classification head → à partir du bottleneck x4
         self.cls_head = nn.Sequential(
             nn.AdaptiveAvgPool3d((4, 4, 4)),
@@ -96,9 +180,11 @@ class BasicUNetWithClassification(nn.Module):
                 
                 # Agrégation: [B, N, C, H, W, D] -> [B, C, H, W, D]
                 #aggregated = torch.max(x4, dim=1)[0]  # Max pooling sur les patches
-                #aggregated = torch.mean(x4, dim=1) 
+                #aggregated = torch.mean(x4, dim=1) # ici metrre fusion attention
+                aggregated, attn_weights = self.patch_fusion(x4)
                 # Classification
-                cls_logits = self.cls_head(x4)
+                #cls_logits = self.cls_head(x4)
+                cls_logits = self.cls_head(aggregated)
                 return None, cls_logits
           
       
@@ -192,3 +278,5 @@ class ClsHead(nn.Module):
         
     def forward(self, x):
         return self.head(x)
+
+
