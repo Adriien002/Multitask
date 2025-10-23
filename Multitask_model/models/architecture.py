@@ -10,89 +10,75 @@ from monai.networks.layers.factories import Conv, Pool
 from monai.networks.nets.basic_unet import TwoConv, Down, UpCat
 from monai.utils import ensure_tuple_rep
 
-class MS_CAM_3D(nn.Module):
-    # Adapté pour 3D et Batch Size = 1 (remplacement BN par GroupNorm ici )
-    def __init__(self, channels=64, r=4, spatial_dims=3):
-        super(MS_CAM_3D, self).__init__()
-        inter_channels = int(channels // r)
-        Conv = nn.Conv3d if spatial_dims == 3 else nn.Conv2d
-        
-        # Helper for Group Norm (equivalent to LayerNorm on C, H, W, D when num_groups=channels)
-        Norm = lambda num_features: nn.GroupNorm(num_features=num_features, num_groups=1)
-        
-        # Local Attention (Local context)
-        self.local_att = nn.Sequential(
-            Conv(channels, inter_channels, kernel_size=1, stride=1, padding=0),
-            Norm(inter_channels),
-            nn.ReLU(inplace=True),
-            Conv(inter_channels, channels, kernel_size=1, stride=1, padding=0),
-            Norm(channels),
-        )
-
-        # Global Attention (Global context)
-        self.global_att = nn.Sequential(
-            nn.AdaptiveAvgPool3d(1) if spatial_dims == 3 else nn.AdaptiveAvgPool2d(1),
-            Conv(channels, inter_channels, kernel_size=1, stride=1, padding=0),
-            Norm(inter_channels),
-            nn.ReLU(inplace=True),
-            Conv(inter_channels, channels, kernel_size=1, stride=1, padding=0),
-            Norm(channels),
-        )
-
-        self.sigmoid = nn.Sigmoid()
-
-    def forward(self, x):
-        xl = self.local_att(x)
-        xg = self.global_att(x)
-        xlg = xl + xg
-        # L'AFF utilise cette sortie avant la Sigmoid pour le calcul de poids binaire
-        return xlg # On retourne les logits pour l'agrégation N-aire, on va utiliser Softmax
-        
-class PatchFusionAttention_MSCAM(nn.Module):
+class PatchAttentionAggregator(nn.Module):
     """
-    Adapte la logique de l'AFF/MS-CAM pour la fusion N-aire de patches 3D.
-    Utilise le MS-CAM pour calculer des poids d'attention multi-échelle (local + global)
-    pour chaque voxel, puis une Softmax sur la dimension des patches (N).
+    Module d'agrégation par attention (Multiple Instance Learning).
+    Prend [B, N, C, H, W, D] et retourne [B, C, H, W, D]
     """
-    def __init__(self, in_channels, r=4):
+    def __init__(self, in_channels: int, hidden_channels: int = 256):
         super().__init__()
-        # Le module MS-CAM (sans la Sigmoid) pour générer les logits de poids
-        self.ms_cam_logits = MS_CAM_3D(channels=in_channels, r=r, spatial_dims=3)
-        # La Sigmoid n'est pas utilisée ici; on utilisera une Softmax sur la dimension N.
         
-    def forward(self, x4):
-        """
-        x4: [B, N, C, H', W', D'] - Tenseur des caractéristiques de patches
-        """
-        B, N, C, H, W, D = x4.shape
+        # 1. Un "pooler" pour obtenir un vecteur par patch
+        self.pool = nn.AdaptiveAvgPool3d((1, 1, 1))
         
-        # 1. Reshape et Calcul des Logits MS-CAM par Patch
-        # x_flat: [B*N, C, H', W', D']
-        x_flat = x4.view(B * N, C, H, W, D) 
+        # 2. Un réseau "gating" pour calculer le score de chaque patch
+        #    Nous utilisons LayerNorm ici, comme dans votre cls_head.
+        self.gate_nn = nn.Sequential(
+            nn.Linear(in_channels, hidden_channels),
+            nn.LayerNorm(hidden_channels),
+            nn.LeakyReLU(inplace=True),
+            nn.Linear(hidden_channels, 1) # Sortie : 1 score par patch
+        )
         
-        # logits_flat: [B*N, C, H', W', D'] (Scores d'attention non normalisés)
-        # Ces logits intègrent le contexte local (point-wise conv) et global (avg pool) de chaque patch.
-        logits_flat = self.ms_cam_logits(x_flat) 
-        
-        # 2. Reshape pour Softmax
-        # logits: [B, N, C, H', W', D']
-        logits = logits_flat.view(B, N, C, H, W, D)
-        
-        # 3. Normalisation Softmax sur la dimension des patches (dim=1)
-        # Softmax appliquée élément-par-élément. Pour chaque voxel (c, h, w, d), 
-        # la somme des N poids (sur les N patches) est égale à 1.
-        # attn: [B, N, C, H', W', D'] (Les poids M_i)
-        attn_weights = F.softmax(logits, dim=1)
-        
-        # 4. Pondération et Agrégation Finale
-        # weighted: [B, N, C, H', W', D']
-        weighted = x4 * attn_weights
-        
-        # aggregated: [B, C, H', W', D']
-        aggregated = weighted.sum(dim=1) 
+        # 3. Softmax pour normaliser les scores en poids (somme=1)
+        self.softmax = nn.Softmax(dim=1) # Appliquer sur la dimension N
 
-        return aggregated, attn_weights        
-
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        x: Tenseur d'entrée de forme [B, N, C, H, W, D]
+        """
+        # Sauvegarde des dimensions
+        B, N, C, H, W, D = x.shape
+        
+        # 1. Reshape pour traiter les N patchs comme un batch
+        # [B, N, C, H, W, D] -> [B*N, C, H, W, D]
+        x_reshaped = x.view(-1, C, H, W, D)
+        
+        # 2. Pooler : résume chaque patch en 1 vecteur
+        # [B*N, C, H, W, D] -> [B*N, C, 1, 1, 1]
+        pooled = self.pool(x_reshaped)
+        
+        # Aplatir pour le MLP
+        # [B*N, C, 1, 1, 1] -> [B*N, C]
+        pooled_flat = pooled.view(B * N, C)
+        
+        # 3. Gating : Calcule le score (logit) pour chaque patch
+        # [B*N, C] -> [B*N, 1]
+        scores = self.gate_nn(pooled_flat)
+        
+        # 4. Reshape pour Softmax : regroupe les scores par batch original
+        # [B*N, 1] -> [B, N]
+        scores_by_batch = scores.view(B, N)
+        
+        # 5. Softmax : Calcule les poids d'attention
+        # Les poids des N patchs pour chaque item du batch somment à 1
+        # [B, N]
+        weights = self.softmax(scores_by_batch)
+        
+        # 6. Agrandir les poids pour la multiplication (broadcasting)
+        # [B, N] -> [B, N, 1, 1, 1, 1]
+        weights_broadcast = weights.view(B, N, 1, 1, 1, 1)
+        
+        # 7. Appliquer les poids :
+        # [B, N, C, H, W, D] * [B, N, 1, 1, 1, 1] -> [B, N, C, H, W, D]
+        weighted_features = x * weights_broadcast
+        
+        # 8. Agréger (somme pondérée)
+        # torch.sum sur la dim N -> [B, C, H, W, D]
+        aggregated = torch.sum(weighted_features, dim=1)
+        
+        return aggregated
+  
 class BasicUNetWithClassification(nn.Module):
     def __init__(
         self,
@@ -126,8 +112,10 @@ class BasicUNetWithClassification(nn.Module):
         self.upcat_1 = UpCat(spatial_dims, fea[1], fea[0], fea[5], act, norm, bias, dropout, upsample, halves=False)
 
         self.final_conv = Conv["conv", spatial_dims](fea[5], out_channels, kernel_size=1)
-        bottleneck_channels = fea[4] 
-        self.patch_fusion = PatchFusionAttention_MSCAM(in_channels=bottleneck_channels, r=4)
+        self.patch_aggregator = PatchAttentionAggregator(
+            in_channels=fea[4], 
+            hidden_channels=256 # Taille ajustable
+        )
         # Classification head → à partir du bottleneck x4
         self.cls_head = nn.Sequential(
             nn.AdaptiveAvgPool3d((4, 4, 4)),
@@ -143,9 +131,10 @@ class BasicUNetWithClassification(nn.Module):
             nn.Linear(256, num_cls_classes)
         )
 
-    def forward(self, x: torch.Tensor, task: str = "segmentation"):
+    def forward(self, x: torch.Tensor, task: str = "segmentation",batch_size: int = None): # ajout de batch_size pour séparer patches et batch
+    
         if task == "segmentation":
-            # Ton code actuel pour la segmentation
+            # code actuel pour la segmentation
             x0 = self.conv_0(x)
             x1 = self.down_1(x0)
             x2 = self.down_2(x1)
@@ -161,54 +150,43 @@ class BasicUNetWithClassification(nn.Module):
             return seg_logits, None
 
         elif task == "classification":
+         
+           
+        # X est de la shape : [B*N, C, H, W, D]
         # Gestion des multi-patches
-            if x.dim() == 6:  # [B, N, C, H, W, D]
-                batch_size, num_patches = x.shape[0], x.shape[1]
+
+            if batch_size is None:
+                raise ValueError("Attention , fournir batch_size ")
+            total_items = x.shape[0] # B*N
+            if total_items % batch_size != 0:
+                raise ValueError(f"Taille de batch incohérente ! total_items={total_items}, batch_size={batch_size}")
+            num_patches = total_items // batch_size # 18 normalement
                 
-                # RESHAPE CRITIQUE: [B, N, C, H, W, D] -> [B*N, C, H, W, D]
-                x_reshaped = x.view(-1, *x.shape[2:])  # [B*N, C, H, W, D]
-                
+               
                 # Forward sur tous les patches
-                x0 = self.conv_0(x_reshaped)
-                x1 = self.down_1(x0)
-                x2 = self.down_2(x1)
-                x3 = self.down_3(x2)
-                x4 = self.down_4(x3)  # [B*N, features, H', W', D']
+            x0 = self.conv_0(x)
+            x1 = self.down_1(x0)
+            x2 = self.down_2(x1)
+            x3 = self.down_3(x2)
+            x4 = self.down_4(x3)  # [B*N, features, H', W', D']
                 
-                # Reshape back: [B*N, C, H, W, D] -> [B, N, C, H, W, D]
-                x4 = x4.view(batch_size, num_patches, *x4.shape[1:])
+          
+            #Nécessaire pour l'attention 
+            x4 = x4.view(batch_size, num_patches, *x4.shape[1:])
                 
-                # Agrégation: [B, N, C, H, W, D] -> [B, C, H, W, D]
+            # Shape d'entrée (x4): torch.Size([2, 18, 256, 6, 6, 6])
+            #-> B=2, N=18, C=256, H=6, W=6, D=6
                 #aggregated = torch.max(x4, dim=1)[0]  # Max pooling sur les patches
-                #aggregated = torch.mean(x4, dim=1) # ici metrre fusion attention
-                aggregated, attn_weights = self.patch_fusion(x4)
-                # Classification
-                #cls_logits = self.cls_head(x4)
-                cls_logits = self.cls_head(aggregated)
-                return None, cls_logits
+                #aggregated = torch.mean(x4, dim=1) # Moyejnne sur les patches
+            aggregated = self.patch_aggregator(x4)
+            #print(f"ShAAAPEPEPEPEPEP ON RENTREEEKOAK OK: {aggregated.shape}, super-patch")
+            # Shape agrégée : torch.Size([2, 256, 6, 6, 6]), super-patch
+            cls_logits = self.cls_head(aggregated) #et shape de sortie : torch.Size([2, 6])
+            return None, cls_logits
           
       
-        
-    
-    # def forward(self, x: torch.Tensor):
-    #     # Encoder
-    #     x0 = self.conv_0(x)
-    #     x1 = self.down_1(x0)
-    #     x2 = self.down_2(x1)
-    #     x3 = self.down_3(x2)
-    #     x4 = self.down_4(x3)
-
-    #     # Decoder (segmentation)
-    #     u4 = self.upcat_4(x4, x3)
-    #     u3 = self.upcat_3(u4, x2)
-    #     u2 = self.upcat_2(u3, x1)
-    #     u1 = self.upcat_1(u2, x0)
-    #     seg_logits = self.final_conv(u1)
-
-    #     # Classification
-    #     cls_logits = self.cls_head(x4)  # x4 est le bottleneck
-
-    #     return seg_logits  , cls_logits
+        #Possibilité d'ajouter d'autres tâches ici 
+  
 
 
 
