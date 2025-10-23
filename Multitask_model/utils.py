@@ -128,10 +128,10 @@ def extract_sliding_window_patches(
     w_starts = get_starts(W, roi_size[1], stride[1])
     d_starts = get_starts(D, roi_size[2], stride[2])
 
-    # 🔹 Génère toutes les positions possibles
+    # Génère toutes les positions possibles
     all_coords = list(itertools.product(h_starts, w_starts, d_starts))
 
-    # 🔹 Si trop de patches, on en prend un sous-ensemble aléatoire
+    #  Si trop de patches, on en prend un sous-ensemble aléatoire
     if len(all_coords) > max_patches:
         all_coords = random.sample(all_coords, max_patches)
 
@@ -149,6 +149,26 @@ def extract_sliding_window_patches(
             "label": label,
             "task": "classification"
         })
+        
+    # gérer le cas où on a moins de patches que max_patches
+    num_to_pad = max_patches - len(patches)
+    if num_to_pad > 0:
+        from monai.data import MetaTensor
+        # Créer un "patch vide" (dummy)
+        dummy_image_tensor = torch.zeros((C, *roi_size), dtype=image_tensor.dtype, device=image_tensor.device)
+        
+        base_meta = {}
+        if isinstance(image_tensor, MetaTensor) and image_tensor.meta:
+             base_meta = image_tensor.meta.copy()
+             base_meta["is_dummy"] = True # Optionnel: pour tracer
+             
+        dummy_patch = MetaTensor(dummy_image_tensor, meta=base_meta)
+        for _ in range(num_to_pad):
+            patches.append({
+                "image": dummy_patch,
+                "label": label,
+                "task": "classification"
+            })
 
 
     return patches
