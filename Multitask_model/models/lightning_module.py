@@ -51,6 +51,13 @@ class MultiTaskHemorrhageModule(pl.LightningModule):
         self.seg_loss_fn = DiceCELoss(include_background=False, to_onehot_y=True, softmax=True)
         self.cls_loss_fn = self._get_class_lossfn()  # BCEWithLogitsLoss avec poids de classe
         
+        
+      
+         # Nombre de patchs par volume pour classification et segmentation
+        self.patches_per_cls_volume = 18  # Max de utils.extract_sliding_window_patches
+        self.patches_per_seg_volume = 2 #Num_samples de randCropByPosNegLabeld
+        
+        
         # Métriques de segmentation
         self.seg_dice_metric = DiceHelper(
             include_background=False,
@@ -74,61 +81,69 @@ class MultiTaskHemorrhageModule(pl.LightningModule):
         return torch.nn.BCEWithLogitsLoss(pos_weight=pos_weights) 
     
       
-    def forward(self, x,task="segmentation"):
-        return self.model(x,task=task)
+    def forward(self, x,task="segmentation", batch_size=None):
+        return self.model(x,task=task,batch_size= batch_size)
         
     def training_step(self, batch, batch_idx):
         total_loss = 0.0
         loss_cls = None
         loss_seg = None
-
+        real_batch_size_cls = 0
+        real_batch_size_seg = 0
+        
         if batch["classification"] is not None:
-            x_cls = batch["classification"]["image"]
-            y_cls = batch["classification"]["label"]
-
-        # Forward pass
-            _ ,cls_logits = self.model(x_cls, task="classification")
-
-        # Loss classification
+            x_cls = batch["classification"]["image"] # Shape [B*N, C, H, W, D]
+            y_cls_duplicated = batch["classification"]["label"] # Shape [B*N, Num_Classes] (car dupliqué pour chaque patch)
+            
+            total_patches = x_cls.shape[0] # mulitple de self.patches_per_volume
+            print(f"Total patches classification dans le batch: {total_patches}")
+            if total_patches % self.patches_per_cls_volume != 0:
+                    raise ValueError("Incohérence du nombre de patchs!")
+                
+            real_batch_size_cls = total_patches // self.patches_per_cls_volume
+            # Forward pass
+            _ ,cls_logits = self.model(x_cls, task="classification",batch_size=real_batch_size_cls) # Shape [B, Num_Classes]
+            # Ajuster y_cls pour ne garder qu'un label par volume
+            y_cls = y_cls_duplicated[::self.patches_per_cls_volume, :]  # Shape [B, Num_Classes]
+            # Loss classification
             loss_cls = self.cls_loss_fn(cls_logits, y_cls)
             
             total_loss+=loss_cls
            
 
-    #     # Log etc.
+         # Log etc.
 
         if batch["segmentation"] is not None:
-            x_seg = batch["segmentation"]["image"]
-            y_seg = batch["segmentation"]["label"]
+            x_seg = batch["segmentation"]["image"] # Shape [B, C, H, W, D]
+            y_seg = batch["segmentation"]["label"] # Shape [B, 1, H, W, D]
 
+            total_seg_patches = x_seg.shape[0]
+            real_batch_size_seg = total_seg_patches // self.patches_per_seg_volume # (B*2) // 2 = B
         # Forward pass
           
-            seg_logits,_ = self.model(x_seg, task="segmentation")
+            seg_logits,_ = self.model(x_seg, task="segmentation") # Shape [B, Num_Classes, H, W, D]
 
         # Loss segmentation
             loss_seg = self.seg_loss_fn(seg_logits, y_seg)
             total_loss += loss_seg
        
-        if batch_idx % 10 == 0:
-            print(f"[Batch {batch_idx}] alloc: {torch.cuda.memory_allocated()/1e9:.2f} GB, "
-              f"reserved: {torch.cuda.memory_reserved()/1e9:.2f} GB")
+        # if batch_idx % 10 == 0:
+        #     print(f"[Batch {batch_idx}] alloc: {torch.cuda.memory_allocated()/1e9:.2f} GB, "
+        #       f"reserved: {torch.cuda.memory_reserved()/1e9:.2f} GB")
         # Batch size pour log
-        batch_size = 0
-        if batch["classification"] is not None:
-            batch_size += batch["classification"]["image"].shape[0]
-        if batch["segmentation"] is not None:
-            batch_size += batch["segmentation"]["image"].shape[0]
-
+     
+        log_batch_size = real_batch_size_cls + real_batch_size_seg
+        if log_batch_size == 0: log_batch_size = 1 # Sécurité
         # Log the overall training loss, which combines segmentation and classification losses.
-        self.log("train_loss", total_loss, batch_size=batch_size, on_step=True, on_epoch=True, prog_bar=True)
+        self.log("train_loss", total_loss, batch_size=log_batch_size, on_step=True, on_epoch=True, prog_bar=True)
         
         # Log the segmentation loss separately for monitoring its contribution to the overall loss.
         if loss_seg is not None:
-            self.log("train_seg_loss", loss_seg, batch_size=batch_size, on_step=True, on_epoch=True)
+            self.log("train_seg_loss", loss_seg, batch_size=real_batch_size_seg, on_step=True, on_epoch=True)
 
         # Log the classification loss separately for monitoring its contribution to the overall loss.
         if loss_cls is not None:
-            self.log("train_cls_loss", loss_cls, on_step=True, on_epoch=True)
+            self.log("train_cls_loss", loss_cls,batch_size=real_batch_size_cls ,on_step=True, on_epoch=True)
       
 
         return total_loss
@@ -139,18 +154,28 @@ class MultiTaskHemorrhageModule(pl.LightningModule):
         total_loss = 0.0
         loss_cls = None
         loss_seg = None
+        real_batch_size_cls = 0
+        real_batch_size_seg = 0
         
         if batch["classification"] is  not None : 
-                x_cls = batch["classification"]["image"]
-                y_cls = batch["classification"]["label"]
+                x_cls = batch["classification"]["image"]# Shape [B*N, C, H, W, D]
+                y_cls_duplicated = batch["classification"]["label"]# Shape [B*N, 6]
                 
-                _ , y_hat_cls = self.model(x_cls, task="classification")
-                loss_cls = self.cls_loss_fn(y_hat_cls, y_cls)
+                total_patches = x_cls.shape[0]
+                print
+                if total_patches % self.patches_per_cls_volume != 0:
+                    raise ValueError("Incohérence du nombre de patchs!")
+                real_batch_size_cls = total_patches // self.patches_per_cls_volume
+                
+                _ , y_hat_cls = self.model(x_cls, task="classification", batch_size=real_batch_size_cls) # Shape [B, Num_Classes]
+                #"Dé-dupliquer" les labels
+                y_cls_for_metrics = y_cls_duplicated[::self.patches_per_cls_volume, :]
+                loss_cls = self.cls_loss_fn(y_hat_cls, y_cls_for_metrics)
                 y_cls_pred = torch.sigmoid(y_hat_cls).as_tensor()
-                self.cls_auc.update(y_cls_pred, y_cls.int())
-                self.cls_mean_auc.update(y_cls_pred, y_cls.int())
-                self.cls_mean_precision.update(y_cls_pred, y_cls.int())
-                self.cls_mean_recall.update(y_cls_pred, y_cls.int())
+                self.cls_auc.update(y_cls_pred, y_cls_for_metrics.int())
+                self.cls_mean_auc.update(y_cls_pred, y_cls_for_metrics.int())
+                self.cls_mean_precision.update(y_cls_pred, y_cls_for_metrics.int())
+                self.cls_mean_recall.update(y_cls_pred, y_cls_for_metrics.int())
                 
                 total_loss += loss_cls
                 
@@ -164,7 +189,7 @@ class MultiTaskHemorrhageModule(pl.LightningModule):
                     sw_batch_size=2,
                     predictor=lambda x: self.model(x,task="segmentation")[0]
                 )
-                
+                real_batch_size_seg = x_seg.shape[0]
                 loss_seg = self.seg_loss_fn(y_hat_seg, y_seg)
                 scores, _ = self.seg_dice_metric(y_hat_seg, y_seg)
                
@@ -180,15 +205,12 @@ class MultiTaskHemorrhageModule(pl.LightningModule):
 
                 
                 # Log total loss
-        batch_size = 0
-        if batch["classification"] is not None:
-                batch_size += batch["classification"]["image"].shape[0]
-        if batch["segmentation"] is not None:
-                batch_size += batch["segmentation"]["image"].shape[0]
+        log_batch_size = real_batch_size_cls + real_batch_size_seg
+        if log_batch_size == 0: log_batch_size = 1
                 
       
 
-        self.log("val_loss", total_loss, batch_size=batch_size, on_step=False, on_epoch=True, prog_bar=True )    
+        self.log("val_loss", total_loss, batch_size=log_batch_size, on_step=False, on_epoch=True, prog_bar=True )    
 
     
 
